@@ -35,21 +35,10 @@ app.use(cors(corsOptions));
 // Initialize Socket.IO with CORS configuration
 const io = new Server(httpServer, {
   cors: {
-    origin: function(origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
-      
-      if (allowedOrigins.indexOf(origin) === -1) {
-        console.log(`Rejected connection from origin: ${origin}`);
-        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-        return callback(new Error(msg), false);
-      }
-      console.log(`Accepted connection from origin: ${origin}`);
-      return callback(null, true);
-    },
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
+    origin: corsOptions.origin,
+    methods: corsOptions.methods,
+    allowedHeaders: corsOptions.allowedHeaders,
+    credentials: corsOptions.credentials
   },
   transports: ['websocket', 'polling']
 });
@@ -117,7 +106,7 @@ const startServer = async () => {
       console.log(`Server running on port ${PORT}`.bgGreen.white);
       console.log('Environment:'.cyan, process.env.NODE_ENV || 'development');
       console.log('MongoDB URL:'.cyan, process.env.MONGO_URL?.substring(0, 20) + '...');
-      console.log('Allowed Origins:'.cyan, allowedOrigins);
+      console.log('Allowed Origins:'.cyan, corsOptions.origin);
     });
 
     // Socket.IO connection handling
