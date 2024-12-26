@@ -104,18 +104,24 @@ const startServer = async () => {
     // Then start the server
     httpServer.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`.bgGreen.white);
-      console.log('Environment:'.cyan, process.env.NODE_ENV || 'development');
-      console.log('MongoDB URL:'.cyan, process.env.MONGO_URL?.substring(0, 20) + '...');
-      console.log('Allowed Origins:'.cyan, corsOptions.origin);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Environment:'.cyan, process.env.NODE_ENV);
+        console.log('MongoDB URL:'.cyan, process.env.MONGO_URL?.substring(0, 20) + '...');
+        console.log('Allowed Origins:'.cyan, corsOptions.origin);
+      }
     });
 
     // Socket.IO connection handling
     io.on('connection', (socket) => {
-      console.log('New socket connection:'.green, socket.id);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('New socket connection:'.green, socket.id);
+      }
       socket.emit('connection_success', { message: 'Connected to notification service' });
 
       socket.on('disconnect', () => {
-        console.log('Socket disconnected:'.yellow, socket.id);
+        if (process.env.NODE_ENV === 'development') {
+          console.log('Socket disconnected:'.yellow, socket.id);
+        }
       });
 
       socket.on('error', (error) => {
