@@ -16,18 +16,37 @@ dotenv.config();
 const app = express();
 const httpServer = createServer(app);
 
-// Define allowed origins
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:5174'
-];
+// CORS Configuration
+const corsOptions = {
+  origin: [
+    'https://smart-task-manager-frontend.vercel.app',
+    'http://localhost:5173', // Keep local development working
+    'http://localhost:3000'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
 
 // Initialize Socket.IO with CORS configuration
 const io = new Server(httpServer, {
   cors: {
-    origin: allowedOrigins,
+    origin: function(origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.indexOf(origin) === -1) {
+        console.log(`Rejected connection from origin: ${origin}`);
+        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+        return callback(new Error(msg), false);
+      }
+      console.log(`Accepted connection from origin: ${origin}`);
+      return callback(null, true);
+    },
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
@@ -39,35 +58,26 @@ const io = new Server(httpServer, {
 const notificationService = new NotificationService(io);
 
 //middleware
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
-
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Add headers middleware
-app.use((req, res, next) => {
-  const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
-  }
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  next();
+// Health check endpoint
+app.get('/', (req, res) => {
+  res.json({
+    status: 'success',
+    message: 'Server is running',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api/v1/health', (req, res) => {
+  res.json({
+    status: 'success',
+    message: 'API is running',
+    environment: process.env.NODE_ENV,
+    timestamp: new Date().toISOString()
+  });
 });
 
 //routes
@@ -76,12 +86,20 @@ app.use('/api/v1/ai', aiRoutes);
 
 // error handler
 app.use((err, req, res, next) => {
+  console.error('Error occurred:'.red, {
+    path: req.path,
+    method: req.method,
+    error: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
+
   const status = err.status || 500;
   const message = err.message || "Something went wrong";
   return res.status(status).json({
     success: false,
     status,
     message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 });
 
@@ -97,21 +115,42 @@ const startServer = async () => {
     // Then start the server
     httpServer.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`.bgGreen.white);
+      console.log('Environment:'.cyan, process.env.NODE_ENV || 'development');
+      console.log('MongoDB URL:'.cyan, process.env.MONGO_URL?.substring(0, 20) + '...');
+      console.log('Allowed Origins:'.cyan, allowedOrigins);
     });
 
     // Socket.IO connection handling
     io.on('connection', (socket) => {
+      console.log('New socket connection:'.green, socket.id);
       socket.emit('connection_success', { message: 'Connected to notification service' });
 
       socket.on('disconnect', () => {
-        // Connection cleanup handled by Socket.IO
+        console.log('Socket disconnected:'.yellow, socket.id);
+      });
+
+      socket.on('error', (error) => {
+        console.error('Socket error:'.red, error);
       });
     });
 
   } catch (error) {
     console.log(`Error: ${error.message}`.bgRed.white);
+    console.error('Stack trace:'.red, error.stack);
     process.exit(1);  // Exit process with failure
   }
 };
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:'.red, error);
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (error) => {
+  console.error('Unhandled Rejection:'.red, error);
+  process.exit(1);
+});
 
 startServer();

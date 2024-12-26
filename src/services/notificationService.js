@@ -1,7 +1,7 @@
 class NotificationService {
     constructor(io) {
         this.io = io;
-        this.checkInterval = 60000; // Check every minute
+        this.checkInterval = 300000; // Check every 5 minutes
         this.startNotificationCheck();
     }
 
