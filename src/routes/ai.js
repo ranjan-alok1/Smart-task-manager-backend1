@@ -1,14 +1,7 @@
-import express from 'express';
-import {
-    getTaskInsights,
-    getSchedulingSuggestions,
-    getProductivityAnalysis
-} from '../controllers/aiController.js';
-
+const express = require('express');
 const router = express.Router();
+const { getInsights } = require('../controllers/aiController');
 
-router.post('/insights', getTaskInsights);
-router.post('/schedule', getSchedulingSuggestions);
-router.post('/analyze', getProductivityAnalysis);
+router.post('/insights', getInsights);
 
-export default router;
+module.exports = router; 

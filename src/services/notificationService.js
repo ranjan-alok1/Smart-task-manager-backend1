@@ -1,88 +1,99 @@
-import Task from '../models/Task.js';
-import NotificationSettings from '../models/NotificationSettings.js';
-import { io } from '../server.js';
+class NotificationService {
+    constructor(io) {
+        this.io = io;
+        this.checkInterval = 60000; // Check every minute
+        this.startNotificationCheck();
+    }
 
-export const scheduleTaskReminders = async () => {
-    const settings = await NotificationSettings.findOne();
-    if (!settings?.enabled) return;
+    startNotificationCheck() {
+        setInterval(() => {
+            this.checkTaskNotifications();
+        }, this.checkInterval);
+    }
 
-    const tasks = await Task.find({
-        status: { $ne: 'completed' },
-        dueDate: { $gt: new Date() }
-    });
+    async checkTaskNotifications() {
+        try {
+            const Task = require('../models/Task');
+            const now = new Date();
 
-    tasks.forEach(task => {
-        const dueDate = new Date(task.dueDate);
-        const reminderTime = new Date(dueDate.getTime() - settings.reminderTime * 60000);
+            // Check for tasks based on priority timing
+            const priorities = ['high', 'medium', 'low'];
+            for (const priority of priorities) {
+                // Calculate the time window for each priority
+                const timeWindow = {
+                    high: 60, // 60 minutes for high priority
+                    medium: 120, // 120 minutes for medium priority
+                    low: 180 // 180 minutes for low priority
+                };
 
-        if (reminderTime > new Date()) {
-            setTimeout(() => {
-                if (shouldSendReminder(task, settings)) {
-                    io.emit('taskReminder', {
-                        taskId: task._id,
+                const minutesAhead = timeWindow[priority];
+                const futureTime = new Date(now.getTime() + minutesAhead * 60000);
+
+                const tasks = await Task.find({
+                    priority: priority,
+                    status: 'pending',
+                    dueDate: {
+                        $gt: now,
+                        $lte: futureTime
+                    }
+                }).sort({ dueDate: 1 });
+
+                tasks.forEach(task => {
+                    const minutesUntilDue = Math.round((task.dueDate - now) / 60000);
+                    
+                    // Only send notification if within the notification window
+                    if (minutesUntilDue <= timeWindow[priority]) {
+                        this.sendNotification({
+                            type: 'task_due_soon',
+                            title: 'Task Due Soon',
+                            message: `${priority.charAt(0).toUpperCase() + priority.slice(1)} priority task "${task.title}" is due in ${minutesUntilDue} minutes!`,
+                            task: {
+                                _id: task._id,
+                                title: task.title,
+                                description: task.description,
+                                priority: task.priority,
+                                dueDate: task.dueDate,
+                                status: task.status
+                            },
+                            priority: priority,
+                            minutesUntilDue: minutesUntilDue
+                        });
+                    }
+                });
+            }
+
+            // Check for overdue tasks at the end of the day (5 PM)
+            const currentHour = now.getHours();
+            if (currentHour === 17) {
+                const overdueTasks = await Task.find({
+                    status: 'pending',
+                    dueDate: { $lt: now }
+                }).sort({ dueDate: 1 });
+
+                if (overdueTasks.length > 0) {
+                    const tasksList = overdueTasks.map(task => ({
+                        _id: task._id,
                         title: task.title,
-                        dueDate: task.dueDate,
-                        priority: task.priority
+                        priority: task.priority,
+                        dueDate: task.dueDate
+                    }));
+
+                    this.sendNotification({
+                        type: 'overdue_tasks',
+                        title: 'Overdue Tasks Reminder',
+                        message: `You have ${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}!`,
+                        tasks: tasksList
                     });
                 }
-            }, reminderTime.getTime() - Date.now());
+            }
+        } catch (error) {
+            // Error handling is done silently to prevent notification service disruption
         }
-    });
-};
-
-const shouldSendReminder = (task, settings) => {
-    switch (task.priority) {
-        case 'high':
-            return settings.highPriority;
-        case 'medium':
-            return settings.mediumPriority;
-        case 'low':
-            return settings.lowPriority;
-        default:
-            return false;
     }
-};
 
-export const sendNotification = async (userId, notification) => {
-    try {
-        io.emit('notification', {
-            userId,
-            ...notification,
-            timestamp: new Date()
-        });
-        return true;
-    } catch (error) {
-        console.error('Error sending notification:', error);
-        return false;
+    sendNotification(notification) {
+        this.io.emit('notification', notification);
     }
-};
+}
 
-export const getNotificationSettings = async () => {
-    try {
-        let settings = await NotificationSettings.findOne();
-        if (!settings) {
-            settings = await NotificationSettings.create({});
-        }
-        return settings;
-    } catch (error) {
-        console.error('Error getting notification settings:', error);
-        throw error;
-    }
-};
-
-export const updateNotificationSettings = async (settingsData) => {
-    try {
-        const settings = await NotificationSettings.findOneAndUpdate(
-            {},
-            settingsData,
-            { new: true, upsert: true }
-        );
-        return settings;
-    } catch (error) {
-        console.error('Error updating notification settings:', error);
-        throw error;
-    }
-};
-
-// Initialize reminders when the service starts
-scheduleTaskReminders().catch(console.error);
+module.exports = NotificationService; 

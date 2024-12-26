@@ -1,42 +1,35 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const taskSchema = new mongoose.Schema({
     title: {
         type: String,
-        required: [true, 'Title is required'],
-        trim: true
+        required: [true, 'Title is required']
     },
     description: {
         type: String,
-        trim: true
-    },
-    status: {
-        type: String,
-        enum: ['pending', 'in-progress', 'completed'],
-        default: 'pending'
+        default: ''
     },
     priority: {
         type: String,
         enum: ['low', 'medium', 'high'],
         default: 'medium'
     },
+    status: {
+        type: String,
+        enum: ['pending', 'completed'],
+        default: 'pending'
+    },
     dueDate: {
         type: Date,
-        required: [true, 'Due date is required']
+        required: [true, 'Due date is required'],
+        validate: {
+            validator: function(value) {
+                return value instanceof Date && !isNaN(value);
+            },
+            message: 'Invalid due date'
+        }
     },
-    category: {
-        type: String,
-        default: 'general'
-    },
-    tags: [{
-        type: String,
-        trim: true
-    }],
     createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    updatedAt: {
         type: Date,
         default: Date.now
     }
@@ -44,8 +37,7 @@ const taskSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// Index for faster queries
-taskSchema.index({ dueDate: 1, status: 1 });
-taskSchema.index({ priority: 1 });
+// Add index for querying tasks by due date and status
+taskSchema.index({ dueDate: 1, status: 1, priority: 1 });
 
-export default mongoose.model('Task', taskSchema);
+module.exports = mongoose.model('Task', taskSchema);
